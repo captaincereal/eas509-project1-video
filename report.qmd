@@ -1,0 +1,30 @@
+# cse455-final-project
+
+CSE 455/555 project: a custom Transformer trained for structured command generation from everyday English.
+
+## Stage 1: Pretrain a GPT from scratch
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/daniya-safdar/cse455-final-project/blob/main/stage1_pretrain.ipynb)
+
+Note: since this is a private repo, the badge above will 404. Instead, in Colab use **File → Open notebook → GitHub tab**, and check **"Include private repos"** to load it.
+
+`stage1_pretrain.ipynb` is a decoder-only Transformer written from scratch in PyTorch (~30M params),
+pretrained on TinyStories. Produces the loss curve, validation perplexity, and text samples.
+
+**Reproduce:** open the notebook in Colab (badge above) → `Runtime → Change runtime type → T4 GPU`
+→ `Runtime → Run all`. ~30 minutes on a free T4.
+
+## Working on the project (Colab ↔ GitHub)
+
+1. Open a notebook via its Colab badge (this loads it straight from this repo).
+2. Make your changes / run cells in Colab.
+3. Press `Cmd/Ctrl+S` → **Save a copy in GitHub** → keep the same file path and branch `main` → OK.
+   Colab creates a git commit in this repo; outputs (plots, samples) are saved with the notebook.
+
+The first time, Colab will ask you to authorize GitHub access.
+
+## Repo layout
+
+- `PROPOSAL.md`: project proposal + plan (Jul 10 deliverable)
+- `stage1_pretrain.ipynb`: Stage 1, from-scratch GPT pretraining on TinyStories
+- Stage 2 (SFT + DPO for intent/slot extraction on SNIPS + ATIS) is coming next, see the proposal
