@@ -1,30 +1,158 @@
-# cse455-final-project
+---
+format:
+  typst:
+    papersize: us-letter
+    fontsize: 11pt
+    mainfont: "Times New Roman"
+    margin:
+      x: 0.75in
+      y: 0.7in
+    toc: false
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+---
 
-CSE 455/555 project: a custom Transformer trained for structured command generation from everyday English.
+```{r}
+#| label: setup
+#| include: false
+source("analysis.R")
+r <- analysis_results
+s <- r$summary
+fmt <- function(x, digits = 0) formatC(x, digits = digits, format = "f", big.mark = ",")
+f3 <- function(x) fmt(x, 3)
+account_value <- function(id, variable) dat[[variable]][match(id, dat$analysis_id)]
+rare_ids <- r$memberships$analysis_id[r$memberships$group == 1]
+singleton_id <- dat$analysis_id[alternative_labels == 1]
+run11_id <- sample_records$analysis_id[sample_records$run == 11 & sample_records$matched_group == 1]
+best <- do.call(rbind, lapply(c("PAM", "Average linkage"), function(m) {
+  d <- r$candidates[r$candidates$method == m, ]
+  d[order(-d$silhouette, d$k)[1], ]
+}))
+```
 
-## Stage 1: Pretrain a GPT from scratch
+# Wholesale customer segmentation
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/daniya-safdar/cse455-final-project/blob/main/stage1_pretrain.ipynb)
+Hanu Varma Pinamaraju · EAS509 Project 1 · October 27, 2026
 
-Note: since this is a private repo, the badge above will 404. Instead, in Colab use **File → Open notebook → GitHub tab**, and check **"Include private repos"** to load it.
+## Question and decision
 
-`stage1_pretrain.ipynb` is a decoder-only Transformer written from scratch in PyTorch (~30M params),
-pretrained on TinyStories. Produces the loss curve, validation perplexity, and text samples.
+Do annual purchasing patterns support repeatable account groups that would help a wholesale distributor review its customer portfolio? The unit is one customer account. A small set of purchasing profiles could make comparisons easier for account managers. That would be useful only if the profiles are understandable and survive reasonable challenges. A split driven mainly by a few unusual accounts would instead favor individual account review.
 
-**Reproduce:** open the notebook in Colab (badge above) → `Runtime → Change runtime type → T4 GPU`
-→ `Runtime → Run all`. ~30 minutes on a free T4.
+**Recommendation:** this analysis does not yet justify adopting broad customer segments. The selected split isolates `r fmt(s$group_sizes[1])` accounts and leaves the other `r fmt(s$group_sizes[2])` undifferentiated.
 
-## Working on the project (Colab ↔ GitHub)
+## Data and representation
 
-1. Open a notebook via its Colab badge (this loads it straight from this repo).
-2. Make your changes / run cells in Colab.
-3. Press `Cmd/Ctrl+S` → **Save a copy in GitHub** → keep the same file path and branch `main` → OK.
-   Colab creates a git commit in this repo; outputs (plots, samples) are saved with the notebook.
+The data are 440 historical customer accounts in Cardoso's public UCI Wholesale customers CSV [1]. Local labels `uci_001` through `uci_440` preserve source-row order for matching and are excluded from distance. This is the public data version; its correspondence to the course-provided file and `customer_id` values has not been verified.
 
-The first time, Colab will ask you to authorize GitHub access.
+All `r s$n_raw` rows were eligible and included in every full-data comparison. Eligibility required six finite, nonnegative spending values and a known Channel. There were `r s$missing_spend` missing spending values, `r s$invalid_spend` invalid spending rows, and `r s$duplicate_spend_rows` repeated spending profiles. Channel is nominal: 1 = Horeca and 2 = Retail. No outliers were removed. Spending is in monetary units (m.u.); the currency is unspecified.
 
-## Repo layout
+The baseline uses **Fresh, Milk, Grocery, Frozen, Detergents_Paper, and Delicassen**. Each is transformed as `log1p`, then centered and divided by its full-sample standard deviation. Accounts are close in Euclidean distance when their standardized log spending amounts are similar. This compresses very large amounts and gives each category equal variance weight. Both purchasing level and category mix remain relevant: accounts are not normalized into spending shares. Correlated categories can still reinforce each other. Channel is reserved for the sensitivity audit; IDs and protected Region are excluded from fitting and selection.
 
-- `PROPOSAL.md`: project proposal + plan (Jul 10 deliverable)
-- `stage1_pretrain.ipynb`: Stage 1, from-scratch GPT pretraining on TinyStories
-- Stage 2 (SFT + DPO for intent/slot extraction on SNIPS + ATIS) is coming next, see the proposal
+## Two concepts of a group
+
+Both methods used the same distance matrix, trying $k=2,3,4,5$. PAM groups accounts around representative observed accounts, or medoids [2]. Average linkage merges groups using their average between-account distance [3]. Silhouette compares within-group distance with distance to the nearest other group; values near zero indicate weak separation.
+
+```{r}
+#| label: method-summary
+tab <- data.frame(
+  Method = best$method,
+  `Best k` = best$k,
+  `Mean silhouette` = f3(best$silhouette),
+  `Group sizes` = best$sizes,
+  check.names = FALSE
+)
+knitr::kable(tab, align = c("l", "c", "c", "l"))
+```
+
+Both partitions are scored on the same accounts and distances, so silhouette provides a common descriptive comparison. The highest mean selected average linkage at $k=2$ for closer examination; exact ties favor smaller $k$, then PAM. The method, cut, distance, and scaling stayed fixed for the checks below. Both methods assign every account to a group.
+
+{{< pagebreak >}}
+
+## What the selected split describes
+
+The two-account group is just `r fmt(s$group_sizes[1] / s$n_eval * 100, 2)`% of the sample. Its low Grocery and Detergents_Paper spending distinguishes it from the remaining accounts, but it is too small and internally uneven to support a broad customer category. The table gives medians in the original monetary units; with two records, a median is their midpoint and need not describe either actual account.
+
+```{r}
+#| label: profile-table
+pt <- r$profile[, c("group", "n", spend)]
+pt$group <- c("Rare pair", "Remaining accounts")
+names(pt) <- c("Group", "n", "Fresh", "Milk", "Grocery", "Frozen", "Det/Paper", "Deli")
+pt[-c(1, 2)] <- lapply(pt[-c(1, 2)], function(v) fmt(v, 1))
+knitr::kable(pt, align = c("l", "r", rep("r", 6)))
+```
+
+*Det/Paper abbreviates Detergents_Paper; Deli abbreviates Delicassen. All six spending columns are medians in m.u.*
+
+The individual records show why the median needs care. `r rare_ids[1]` spends `r fmt(account_value(rare_ids[1], "Fresh"))` on Fresh, versus `r fmt(account_value(rare_ids[2], "Fresh"))` for `r rare_ids[2]`. Their Grocery values are `r fmt(account_value(rare_ids[1], "Grocery"))` and `r fmt(account_value(rare_ids[2], "Grocery"))`; Detergents_Paper values are `r fmt(account_value(rare_ids[1], "Detergents_Paper"))` and `r fmt(account_value(rare_ids[2], "Detergents_Paper"))`. They share very low spending in selected categories but differ substantially elsewhere. Their transaction records would need checking before treating the pair as a customer type.
+
+```{r}
+#| label: silhouette-by-group
+#| fig-width: 6.8
+#| fig-height: 2.35
+#| fig-dpi: 240
+#| fig-cap: "Silhouette for the selected fit. Orange points show the rare accounts separately. The blue box marks the other 438 accounts' median and interquartile range; whiskers reach data within 1.5 IQR, with dots beyond them. Source: public UCI data."
+op <- par(mar = c(3.5, 9.0, .5, .7), mgp = c(2.3, .7, 0),
+          family = "sans", cex = .9, las = 1)
+mm <- r$memberships
+plot(NA, xlim = c(-.2, .76), ylim = c(.6, 2.4),
+     xlab = "Silhouette width (unitless)", ylab = "", yaxt = "n", bty = "l")
+axis(2, at = c(1, 2), labels = c("Rare pair (n = 2)", "Remaining (n = 438)"), tick = FALSE)
+abline(v = 0, col = "gray65", lty = 2)
+boxplot(mm$silhouette[mm$group == 2], horizontal = TRUE, at = 2, add = TRUE,
+        axes = FALSE, boxwex = .32, col = "#DCE8EE", border = "#456C86",
+        pch = 16, cex = .45)
+rare_y <- c(.85, 1.15)
+points(mm$silhouette[mm$group == 1], rare_y, pch = 16, col = "#B15E2F")
+text(mm$silhouette[mm$group == 1] + .035, rare_y,
+     labels = mm$analysis_id[mm$group == 1], adj = 0, cex = .85)
+par(op)
+```
+
+The overall mean silhouette is `r f3(s$silhouette)`, but the rare pair's mean is only `r f3(s$group_silhouette[1])`, versus `r f3(s$group_silhouette[2])` for the other `r s$group_sizes[2]` accounts. There are `r s$negative_n` negative values overall. The large group dominates the average. Its favorable score is relative to the rare pair; it does not show that all `r s$group_sizes[2]` accounts share one meaningful purchasing profile.
+
+PAM at $k=2$ gives a `r best$sizes[best$method == "PAM"]` split with mean silhouette `r f3(best$silhouette[best$method == "PAM"])`. Agreement with the selected cut is approximately chance level (ARI `r f3(s$comparison_ari)`). ARI compares pairs of accounts, correcting for chance; 1 is identical and 0 is chance-level agreement. PAM produces a different, more balanced partition on the same distances. Only the selected hierarchical cut received the sensitivity and resampling tests.
+
+{{< pagebreak >}}
+
+## Effect of including business channel
+
+I added Channel because accounts with similar spending may operate through different business channels. Accounts from different channels move farther apart; same-channel distances stay unchanged.
+
+The distance is $d_{alt}(i,j)=\sqrt{d_{base}(i,j)^2+2I(C_i\ne C_j)}$, where $I$ indicates a channel mismatch. A coordinate with sample variance 1 has a mean squared gap of 2 across distinct account pairs; I used this as the mismatch penalty. Matching channels receive zero, so Channel has less average influence than one spending measure. The weight, spending transforms, method, $k=2$, and all `r s$n_eval` IDs stayed fixed.
+
+The rare group shrinks from `r r$profile$n[1]` accounts to `r r$alternative_profile$n[1]`, leaving `r singleton_id` alone. ARI is `r f3(s$sensitivity_ari)`, although only `r s$sensitivity_changed` of `r s$n_eval` memberships changes. Matched-group Jaccard, shared accounts divided by accounts in either group, is `r f3(s$sensitivity_jaccard[1])` for the rare group. Its Fresh median shifts from `r fmt(r$profile$Fresh[1])` to `r fmt(r$alternative_profile$Fresh[1])` m.u. This affects the identity and profile of the tiny group while leaving almost the entire portfolio together.
+
+## Stability when accounts are removed
+
+I drew `r s$B` independent 80% subsamples without replacement (`r s$sample_n` accounts each; seed `r s$seed`). Each used the selected method, $k$, and original log-spending scales. The refitted labels were compared with the full-data labels for exactly those sampled IDs. The test asks whether the selected grouping returns when accounts are removed; it does not reselect a method or $k$, or estimate new scales.
+
+```{r}
+#| label: stability-plot
+#| fig-width: 6.8
+#| fig-height: 1.85
+#| fig-dpi: 240
+#| fig-cap: "Agreement across all 30 subsamples. Twenty-five reproduce the full-data grouping on the sampled accounts exactly. Orange points mark the five runs that differ. Source: R analysis of the public UCI data."
+op <- par(mar = c(3.3, 4, .5, .8), mgp = c(2.1, .65, 0),
+          family = "sans", cex = .9, las = 1)
+st <- r$stability
+plot(st$run, st$ari, pch = 16, cex = .85,
+     col = ifelse(st$ari < 1 - 1e-12, "#B15E2F", "#456C86"),
+     xlim = c(.5, 30.5), ylim = c(-.1, 1.1),
+     xlab = "Independent subsample run", ylab = "Adjusted Rand index", bty = "l")
+abline(h = c(0, 1), col = "gray78", lty = 3)
+text(11, st$ari[11] + .15, "Run 11", cex = .78)
+par(op)
+```
+
+There are `r s$perfect_runs`/`r s$B` exact matches, with median ARI `r f3(s$stability_ari[3])` and range `r f3(s$stability_ari[1])` to `r f3(s$stability_ari[5])`. After one-to-one matching by maximum total Jaccard, the rare group's Jaccard ranges from `r f3(s$group_jaccard[[1]][1])` to `r f3(s$group_jaccard[[1]][5])`; the large group's minimum is `r f3(s$group_jaccard[[2]][1])`. In run 11, both rare accounts remain sampled but merge into the large group, while `r run11_id` becomes the singleton. The median of 1 therefore conceals replacement of the rare group in one run.
+
+## Verdict and next test
+
+I would review the unusual records individually and defer broad segmentation based on the selected result. The cut leaves `r s$group_sizes[2]` of `r s$n_eval` accounts undifferentiated, offering little help with portfolio planning. The two checks also show that the small group's identity is fragile. This conclusion concerns the selected hierarchical cut, not every possible segmentation. The next step is to check the unusual accounts' transaction records and repeat the analysis in a later purchasing period using the same representation. Useful profiles that persist across periods would support revisiting the decision.
+
+**References:** [1] Cardoso, M. (2013). *Wholesale customers*. UCI. [doi:10.24432/C5030X](https://doi.org/10.24432/C5030X). [2] Maechler et al. (2025). *cluster* 2.1.8.1. [CRAN](https://CRAN.R-project.org/package=cluster). [3] R Core Team (2025). *R: A Language and Environment for Statistical Computing*. R Foundation, Vienna. [R](https://www.R-project.org/).
+
+**AI disclosure:** I used OpenAI Codex for conceptual explanations, debugging my own R code, and editing my prose. I checked suggested changes against course materials and reran the analysis myself.
